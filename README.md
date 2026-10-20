@@ -25,6 +25,8 @@ This repo:
      to unlock), or hold it with a finger while you draw. Shift makes squares, circles, 45° lines
      and proportional scaling; Alt draws from the centre or duplicates while moving. Drag the bar
      by its handle to move it; tap the handle to fold it away;
+   - the Tools panel scrolls when you drag up or down on it with a finger or the pen, buttons
+     included (`patches/toolbar-drag-scroll.patch`);
    - rotating the tablet or attaching a keyboard doesn't reload the app; Back sends it to the
      background instead of closing your drawing.
 
@@ -86,3 +88,4 @@ set to your branch.
 | `android/` | The Android app (Kotlin, one activity: `MainActivity.kt`) |
 | `web/android-bridge.js` | Loaded before the wasm: redirects downloads and print jobs to the app |
 | `web/touch-modifiers.js` | Loaded before the wasm: the on-screen Shift / Alt / Ctrl keys |
+| `patches/*.patch` | Applied to VectorCraft's source before it's built (tablet changes not upstream) |

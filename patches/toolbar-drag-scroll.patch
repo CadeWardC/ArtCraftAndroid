@@ -1,0 +1,96 @@
+diff --git a/crates/ui-egui/src/toolbar.rs b/crates/ui-egui/src/toolbar.rs
+index b2d9ab0..8bd0fa6 100644
+--- a/crates/ui-egui/src/toolbar.rs
++++ b/crates/ui-egui/src/toolbar.rs
+@@ -27,6 +27,8 @@ const CLOSE: f32 = 14.0;
+ const TEAR: f32 = 3.0;
+ /// Seconds a floating flyout flashes when a press that would open its flyout raises it.
+ const FLASH: f64 = 0.4;
++/// Points a press on a tool button travels up or down before it scrolls the toolbar instead.
++const SCROLL_START: f32 = 8.0;
+ /// Size of a tool button in a floating flyout's strip.
+ const STRIP_BUTTON: egui::Vec2 = vec2(32.0, PITCH);
+ 
+@@ -180,6 +182,13 @@ fn body(app: &mut VectorcraftApp, ui: &mut Ui, cols: usize, floating: Option<egu
+             ui.data_mut(|d| d.remove::<egui::Id>(held_id));
+         }
+         let held: Option<egui::Id> = ui.data(|d| d.get_temp(held_id));
++        // A press on a tool button that travels up or down scrolls the tools (a finger or a pen on
++        // a tablet, where the buttons leave no room to drag), until it lets go.
++        let scroll_id = egui::Id::new("toolbar-drag-scroll");
++        if ui.input(|inp| inp.pointer.any_pressed()) {
++            ui.data_mut(|d| d.remove::<bool>(scroll_id));
++        }
++        let mut scrolling = ui.data(|d| d.get_temp::<bool>(scroll_id)).unwrap_or(false);
+         // While Edit Toolbar's drawer is open, the tools drag (to new places or into the drawer)
+         // instead of opening their flyouts.
+         let editing = app.ui.tools_drawer;
+@@ -240,7 +249,25 @@ fn body(app: &mut VectorcraftApp, ui: &mut Ui, cols: usize, floating: Option<egu
+                         buttons.push((k, rect));
+                         resp.dnd_set_drag_payload(crate::edit_toolbar::ToolDrag { tool: shown.id, from_toolbar: true });
+                     }
+-                    let press = if slot.len() > 1 && !editing { flyout_press(ui, &resp, rect) } else { None };
++                    if !editing && resp.dragged() {
++                        let vertical = press_travel(ui.ctx()).is_some_and(|v| v.y.abs() > SCROLL_START && v.y.abs() > v.x.abs());
++                        // A long press held still first opened the flyout: its tools are picked by
++                        // sliding onto them, so that press doesn't scroll.
++                        let quick = ui.input(|inp| inp.pointer.press_start_time().is_some_and(|s| inp.time - s < LONG_PRESS));
++                        if !scrolling && vertical && quick {
++                            scrolling = true;
++                            ui.data_mut(|d| d.insert_temp(scroll_id, true));
++                            // A press on the corner triangle opened the flyout at once: the scroll closes it.
++                            if held == Some(resp.id) {
++                                app.ui.flyout = None;
++                                ui.data_mut(|d| d.remove::<egui::Id>(held_id));
++                            }
++                        }
++                        if scrolling {
++                            ui.scroll_with_delta(vec2(0.0, resp.drag_delta().y));
++                        }
++                    }
++                    let press = if slot.len() > 1 && !editing && !scrolling { flyout_press(ui, &resp, rect) } else { None };
+                     let alt = ui.input(|inp| inp.modifiers.alt);
+                     if press.is_some() {
+                         if is_floating(app, slot[0]) {
+@@ -251,6 +278,8 @@ fn body(app: &mut VectorcraftApp, ui: &mut Ui, cols: usize, floating: Option<egu
+                         if press == Some(FlyoutPress::Primary) {
+                             ui.data_mut(|d| d.insert_temp(held_id, resp.id));
+                         }
++                    } else if scrolling {
++                        // The scroll's release picks nothing.
+                     } else if resp.clicked() && held == Some(resp.id) {
+                         // Releasing the long press that opened the flyout leaves it open.
+                     } else if resp.clicked() && alt && slot.len() > 1 {
+@@ -906,6 +935,32 @@ pub(crate) mod tests {
+         assert_eq!(frame_in(&mut app, &ctx, 8.0, vec![], 500.0)[0], tools[0]);
+     }
+ 
++    /// A press on a tool button scrolls the toolbar as it moves up or down, without picking the
++    /// tool or opening its flyout.
++    #[test]
++    fn dragging_a_tool_button_scrolls_the_toolbar() {
++        let mut app = VectorcraftApp::new(Session::new(), Default::default());
++        app.run("file.new", json!({"width": 300, "height": 300})).unwrap();
++        let ctx = egui::Context::default();
++        let tools = frame_in(&mut app, &ctx, 0.0, vec![], 500.0);
++        let before = app.session.tool_id().to_string();
++        // The third button (not the active tool's), dragged 150 pt up.
++        let from = tools[2].center();
++        let press = |pressed| Event::PointerButton { pos: from, button: PointerButton::Primary, pressed, modifiers: Default::default() };
++        frame_in(&mut app, &ctx, 0.0, vec![Event::PointerMoved(from), press(true)], 500.0);
++        let mut t = 0.0;
++        for k in 1..=15 {
++            t = f64::from(k) * 0.016;
++            frame_in(&mut app, &ctx, t, vec![Event::PointerMoved(from - vec2(0.0, 10.0 * k as f32))], 500.0);
++        }
++        let up = from - vec2(0.0, 150.0);
++        let after = frame_in(&mut app, &ctx, t + 0.016, vec![Event::PointerButton { pos: up, button: PointerButton::Primary, pressed: false, modifiers: Default::default() }], 500.0);
++        frame_in(&mut app, &ctx, t + 0.05, vec![], 500.0);
++        assert!(after[0].top() < tools[0].top() - 100.0, "scrolled: {:?} -> {:?}", tools[0], after[0]);
++        assert_eq!(app.session.tool_id(), before, "the drag picked no tool");
++        assert!(app.ui.flyout.is_none(), "nor opened a flyout");
++    }
++
+     /// The tool buttons sit in the middle of the panel, between its border and the separator
+     /// line, docked and floating, in one or two columns (docked, they sat 2½ pt right of centre).
+     #[test]

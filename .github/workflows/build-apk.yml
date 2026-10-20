@@ -49,6 +49,15 @@ jobs:
           ref: ${{ env.VC_REF }}
           path: vectorcraft
 
+      # Tablet changes to VectorCraft's Rust that aren't upstream (yet): patches/*.patch.
+      - name: Apply patches
+        run: |
+          shopt -s nullglob
+          for p in patches/*.patch; do
+            echo "applying $p"
+            git -C vectorcraft apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"
+          done
+
       # Optional fonts the web build serves beside the wasm (Arabic, Thai, Georgian fallbacks and
       # more). VectorCraft builds without them; they live in their own repo by design.
       - name: Check out craft-fonts
