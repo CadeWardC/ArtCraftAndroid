@@ -159,7 +159,8 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: VectorCraft ${{ env.VC_VERSION }} (${{ env.VC_SHA }}) for Android
-          prerelease: true
+          prerelease: false
+          make_latest: true
           body: |
             VectorCraft `${{ env.VC_VERSION }}` from [${{ env.VC_REPO }}@${{ env.VC_SHA }}](https://github.com/${{ env.VC_REPO }}/commit/${{ env.VC_SHA }}), wrapped for Android.
             Open this page on the tablet and tap the APK below to install.
