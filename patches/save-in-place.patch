@@ -1,0 +1,64 @@
+diff --git a/apps/vectorcraft-web/src/web.rs b/apps/vectorcraft-web/src/web.rs
+index c307994..12a33c8 100644
+--- a/apps/vectorcraft-web/src/web.rs
++++ b/apps/vectorcraft-web/src/web.rs
+@@ -566,6 +566,10 @@ fn download(path: &str, bytes: &[u8]) -> Result<(), String> {
+     let a: web_sys::HtmlAnchorElement = document.create_element("a").map_err(js)?.dyn_into().map_err(|_| "not an anchor")?;
+     a.set_href(&url);
+     a.set_download(&name);
++    // File → Save over the document's own file (the Android app writes over it in place).
++    if vectorcraft_ui_egui::io::saving_own_file() {
++        a.set_attribute("data-save", "own").map_err(js)?;
++    }
+     a.style().set_property("display", "none").map_err(js)?;
+     let body = document.body().ok_or("no body")?;
+     body.append_child(&a).map_err(js)?;
+diff --git a/crates/ui-egui/src/io.rs b/crates/ui-egui/src/io.rs
+index 9ff9a4d..6f9d8fd 100644
+--- a/crates/ui-egui/src/io.rs
++++ b/crates/ui-egui/src/io.rs
+@@ -275,6 +275,17 @@ pub fn new_from_template(app: &mut VectorcraftApp, path: Option<String>) -> Resu
+     Ok(r)
+ }
+ 
++thread_local! {
++    /// Set while File → Save writes over the document's own file, not to a name or place just
++    /// picked: the Android app overwrites that file then, and asks where anything else goes.
++    static OWN_FILE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
++/// Is the write under way File → Save over the document's own file?
++pub fn saving_own_file() -> bool {
++    OWN_FILE.with(std::cell::Cell::get)
++}
++
+ /// Web: download `bytes` under `path`'s file name; desktop: write them to `path`.
+ pub(crate) fn write_to(services: &mut Services, path: &str, bytes: &[u8]) -> Result<(), String> {
+     if let Some(dl) = services.download.as_mut() {
+@@ -456,7 +467,10 @@ pub fn save(app: &mut VectorcraftApp, mode: SaveMode, p: &Value, ask_options: bo
+         if ask && matches!(mode, SaveMode::SaveAs | SaveMode::Copy) && matches!(first.format.id, "svg" | "svgz") {
+             return ask_format_options(app, mode, first.format, &path);
+         }
+-        return write_plan(app, first);
++        OWN_FILE.with(|c| c.set(mode == SaveMode::Save && p.get("path").is_none()));
++        let r = write_plan(app, first);
++        OWN_FILE.with(|c| c.set(false));
++        return r;
+     }
+     if is_web(app) && ask_options {
+         return Ok(open_options(app, mode.command(), first.format, &first.name, true));
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 7d63c21..08893e7 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -1064,7 +1064,9 @@ impl VectorcraftApp {
+         let arrived: Vec<(String, Vec<u8>)> =
+             self.services.inbox.as_ref().map(|q| std::mem::take(&mut *q.lock().unwrap_or_else(|e| e.into_inner()))).unwrap_or_default();
+         for (name, bytes) in arrived {
+-            if let Err(e) = io::open_bytes(self, &name, &bytes, None) {
++            // The file's name is its document's path, so File → Save writes over it (the Android
++            // app keeps where the file came from) instead of asking for a name.
++            if let Err(e) = io::open_bytes(self, &name, &bytes, Some(name.clone())) {
+                 io::report_open_error(self, &name, &e);
+             }
+         }
