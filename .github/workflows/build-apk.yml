@@ -1,0 +1,156 @@
+name: Build VectorCraft APK
+
+# Builds VectorCraft's web app (Rust -> wasm, with Trunk) from storytold/vectorcraft (or a fork),
+# bundles it into the Android WebView app in android/, and publishes the APK.
+on:
+  workflow_dispatch:
+    inputs:
+      vectorcraft_repo:
+        description: "VectorCraft repository to build (owner/name; your fork if you changed the Rust)"
+        default: "storytold/vectorcraft"
+      vectorcraft_ref:
+        description: "Branch, tag or commit of VectorCraft"
+        default: "main"
+      force_webgl:
+        description: "Start with WebGL2 instead of WebGPU (try this if the canvas stays blank)"
+        type: boolean
+        default: false
+      publish_release:
+        description: "Publish the APK as a GitHub release (easy to download on the tablet)"
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VC_REPO: ${{ inputs.vectorcraft_repo || 'storytold/vectorcraft' }}
+  VC_REF: ${{ inputs.vectorcraft_ref || 'main' }}
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Check out VectorCraft
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.VC_REPO }}
+          ref: ${{ env.VC_REF }}
+          path: vectorcraft
+
+      # Optional fonts the web build serves beside the wasm (Arabic, Thai, Georgian fallbacks and
+      # more). VectorCraft builds without them; they live in their own repo by design.
+      - name: Check out craft-fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          path: craft-fonts
+
+      - name: Install Rust (stable + wasm32)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vectorcraft -> target
+
+      - name: Install Trunk
+        run: |
+          curl -sSfL https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.cargo/bin"
+          trunk --version
+
+      - name: Build VectorCraft web app
+        working-directory: vectorcraft/apps/vectorcraft-web
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+        run: trunk build --release
+
+      - name: Bundle the web app into the APK assets
+        run: |
+          www=android/app/src/main/assets/www
+          rm -rf "$www"
+          mkdir -p "$www"
+          cp -r vectorcraft/dist/web/. "$www/"
+          cp web/android-bridge.js "$www/"
+          # The bridge must load before the wasm glue: first thing in <head>.
+          sed -i '0,/<head>/s||<head>\n  <script src="android-bridge.js"></script>|' "$www/index.html"
+          grep -q 'android-bridge.js' "$www/index.html"
+          du -sh "$www"
+          ls -la "$www"
+          version=$(grep -m1 '^version' vectorcraft/Cargo.toml | cut -d'"' -f2)
+          sha=$(git -C vectorcraft rev-parse --short HEAD)
+          echo "VC_VERSION=$version" >> "$GITHUB_ENV"
+          echo "VC_SHA=$sha" >> "$GITHUB_ENV"
+          echo "APK_NAME=VectorCraft-$version-$sha-${{ github.run_number }}.apk" >> "$GITHUB_ENV"
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      # Optional: a fixed signing key, so each new APK installs as an update over the last one.
+      # Without these secrets the APK is signed with a throwaway debug key (see README).
+      - name: Decode signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: the APK is signed with a throwaway key, so it won't install over a previous build (uninstall first). See README."
+          fi
+
+      - name: Build APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: >
+          gradle assembleRelease --no-daemon --stacktrace
+          -PversionCode=${{ github.run_number }}
+          -PversionName="${VC_VERSION}-${VC_SHA}"
+          -PforceWebgl=${{ inputs.force_webgl || false }}
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_NAME }}
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name == 'push' || inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: VectorCraft ${{ env.VC_VERSION }} (${{ env.VC_SHA }}) for Android
+          prerelease: true
+          body: |
+            VectorCraft `${{ env.VC_VERSION }}` from [${{ env.VC_REPO }}@${{ env.VC_SHA }}](https://github.com/${{ env.VC_REPO }}/commit/${{ env.VC_SHA }}), wrapped for Android.
+            Open this page on the tablet and tap the APK below to install.
+          files: ${{ env.APK_NAME }}
