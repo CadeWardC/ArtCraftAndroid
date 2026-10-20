@@ -1,7 +1,8 @@
 name: Build VectorCraft APK
 
 # Builds VectorCraft's web app (Rust -> wasm, with Trunk) from storytold/vectorcraft (or a fork),
-# bundles it into the Android WebView app in android/, and publishes the APK.
+# bundles it into the Android WebView app in android/, and publishes the APK. Every run (each push
+# to main, each manual run) is a new release, build-<run number>; runs never cancel each other.
 on:
   workflow_dispatch:
     inputs:
@@ -15,20 +16,11 @@ on:
         description: "Start with WebGL2 instead of WebGPU (try this if the canvas stays blank)"
         type: boolean
         default: false
-      publish_release:
-        description: "Publish the APK as a GitHub release (easy to download on the tablet)"
-        type: boolean
-        default: true
   push:
     branches: [main]
-    paths-ignore: ["**.md"]
 
 permissions:
   contents: write
-
-concurrency:
-  group: apk-${{ github.ref }}
-  cancel-in-progress: true
 
 env:
   VC_REPO: ${{ inputs.vectorcraft_repo || 'storytold/vectorcraft' }}
@@ -154,7 +146,6 @@ jobs:
           if-no-files-found: error
 
       - name: Publish release
-        if: github.event_name == 'push' || inputs.publish_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
