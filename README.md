@@ -20,6 +20,11 @@ This repo:
    - **File > Open / Place** opens the Android file picker;
    - **Save / Export** write to `Downloads/VectorCraft/` (via `web/android-bridge.js`);
    - **Print** saves the PDF to `Downloads/VectorCraft/` so you can print it from a PDF app;
+   - **Shift / Alt / Ctrl** keys on screen (`web/touch-modifiers.js`), for constraining shapes
+     without a keyboard: tap a key for the next stroke only, double-tap to lock it on (tap again
+     to unlock), or hold it with a finger while you draw. Shift makes squares, circles, 45° lines
+     and proportional scaling; Alt draws from the centre or duplicates while moving. Drag the bar
+     by its handle to move it; tap the handle to fold it away;
    - rotating the tablet or attaching a keyboard doesn't reload the app; Back sends it to the
      background instead of closing your drawing.
 
@@ -80,3 +85,4 @@ set to your branch.
 | `.github/workflows/build-apk.yml` | Builds the web app, bundles it, builds and publishes the APK |
 | `android/` | The Android app (Kotlin, one activity: `MainActivity.kt`) |
 | `web/android-bridge.js` | Loaded before the wasm: redirects downloads and print jobs to the app |
+| `web/touch-modifiers.js` | Loaded before the wasm: the on-screen Shift / Alt / Ctrl keys |

@@ -85,10 +85,11 @@ jobs:
           rm -rf "$www"
           mkdir -p "$www"
           cp -r vectorcraft/dist/web/. "$www/"
-          cp web/android-bridge.js "$www/"
-          # The bridge must load before the wasm glue: first thing in <head>.
-          sed -i '0,/<head>/s||<head>\n  <script src="android-bridge.js"></script>|' "$www/index.html"
+          cp web/android-bridge.js web/touch-modifiers.js "$www/"
+          # The scripts must load before the wasm glue: first thing in <head>.
+          sed -i '0,/<head>/s||<head>\n  <script src="android-bridge.js"></script>\n  <script src="touch-modifiers.js"></script>|' "$www/index.html"
           grep -q 'android-bridge.js' "$www/index.html"
+          grep -q 'touch-modifiers.js' "$www/index.html"
           du -sh "$www"
           ls -la "$www"
           version=$(grep -m1 '^version' vectorcraft/Cargo.toml | cut -d'"' -f2)
