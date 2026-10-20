@@ -18,19 +18,24 @@ This repo:
    from inside the APK (works offline),
 3. adds the parts a WebView doesn't do on its own:
    - **File > Open / Place** opens the Android file picker;
-   - **Save / Export** write to `Downloads/VectorCraft/` (via `web/android-bridge.js`);
+   - **Save** writes over the document's own file: the one you opened, or where you last saved it
+     (in place, wherever it is: a folder, an SD card, Drive). A new drawing's first Save, **Save
+     As** and **Export** open Android's save picker so you choose the folder and name (via
+     `web/android-bridge.js` and `patches/save-in-place.patch`);
    - **Print** saves the PDF to `Downloads/VectorCraft/` so you can print it from a PDF app;
-   - **Shift / Alt / Ctrl** keys on screen (`web/touch-modifiers.js`), for constraining shapes
-     without a keyboard: tap a key for the next stroke only, double-tap to lock it on (tap again
-     to unlock), or hold it with a finger while you draw. Shift makes squares, circles, 45° lines
-     and proportional scaling; Alt draws from the centre or duplicates while moving. Drag the bar
-     by its handle to move it; tap the handle to fold it away;
+   - **Shift / Alt** without a keyboard (`web/touch-modifiers.js`): rest fingers on the screen
+     while the pen draws. One finger is Shift (squares, circles, 45° lines, proportional scaling,
+     add to a selection), two are Alt (draw from the centre, duplicate while moving), three are
+     both. Fingers count only while they stay still (a moving finger pans), palms are ignored, and
+     a label at the top shows which keys are on;
    - the Tools panel scrolls when you drag up or down on it with a finger or the pen, buttons
      included (`patches/toolbar-drag-scroll.patch`);
    - rotating the tablet or attaching a keyboard doesn't reload the app; Back sends it to the
      background instead of closing your drawing.
 
-No upstream code is changed, so every build picks up the latest VectorCraft.
+Upstream changes are kept small, as patches in `patches/` applied before each build, so every
+build picks up the latest VectorCraft. If upstream changes the code a patch touches, the build
+stops at **Apply patches**: update the patch then.
 
 ## Getting the APK
 
@@ -86,6 +91,6 @@ set to your branch.
 | --- | --- |
 | `.github/workflows/build-apk.yml` | Builds the web app, bundles it, builds and publishes the APK |
 | `android/` | The Android app (Kotlin, one activity: `MainActivity.kt`) |
-| `web/android-bridge.js` | Loaded before the wasm: redirects downloads and print jobs to the app |
-| `web/touch-modifiers.js` | Loaded before the wasm: the on-screen Shift / Alt / Ctrl keys |
+| `web/android-bridge.js` | Loaded before the wasm: hands saves, exports and print jobs to the app |
+| `web/touch-modifiers.js` | Loaded before the wasm: Shift / Alt from fingers resting while the pen draws |
 | `patches/*.patch` | Applied to VectorCraft's source before it's built (tablet changes not upstream) |
